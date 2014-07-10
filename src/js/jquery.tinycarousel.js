@@ -1,10 +1,10 @@
-;(function(factory)
+;(function (factory)
 {
-    if(typeof define === 'function' && define.amd)
+    if (typeof define === 'function' && define.amd)
     {
         define(['jquery'], factory);
     }
-    else if(typeof exports === 'object')
+    else if (typeof exports === 'object')
     {
         factory(require('jquery'));
     }
@@ -13,7 +13,7 @@
         factory(jQuery);
     }
 }
-(function($)
+(function ($)
 {
     var pluginName = "tinycarousel"
     ,   defaults   =
@@ -22,11 +22,11 @@
         ,   axis:           "x"    // vertical or horizontal scroller? ( x || y ).
         ,   buttons:        true   // show left and right navigation buttons.
         ,   bullets:        false  // is there a page number navigation present?
-        ,   interval:       true  // move to another block on intervals.
-        ,   intervalTime:   2000   // interval time in milliseconds.
+        ,   interval:       false  // move to another block on intervals.
+        ,   intervalTime:   5000   // interval time in milliseconds.
         ,   animation:      true   // false is instant, true is animate.
         ,   animationTime:  1000   // how fast must the animation move in ms?
-        ,   stepSize:       5
+        ,   infinite:       true   // infinite carousel.
         }
     ;
 
@@ -48,6 +48,7 @@
         ,   contentStyle    = {}
         ,   slidesVisible   = 0
         ,   slideSize       = 0
+        ,   slideIndex      = 0
 
         ,   isHorizontal  = this.options.axis === 'x'
         ,   sizeLabel     = isHorizontal ? "Width" : "Height"
@@ -57,12 +58,11 @@
 
         this.slideCurrent = 0;
         this.slidesTotal  = 0;
-
         var running=true;
         function initialize()
         {
             self.update();
-            self.move(slideCurrent);
+            self.move(self.slideCurrent);
 
             setEvents();
 
@@ -71,14 +71,19 @@
 
         this.update = function()
         {
-            $slides          = $overview.children();
-            viewportSize     = $viewport[0]["offset" + sizeLabel];
-            slideSize        = $slides.first()["outer" + sizeLabel](true);
-            self.slidesTotal = $slides.length;
-            slideCurrent     = self.options.start || 0;
-            slidesVisible    = Math.ceil(viewportSize / slideSize);
+            $overview.find(".mirrored").remove();
 
-            $overview.css(sizeLabel.toLowerCase(), slideSize * self.slidesTotal);
+            $slides           = $overview.children();
+            viewportSize      = $viewport[0]["offset" + sizeLabel];
+            slideSize         = $slides.first()["outer" + sizeLabel](true);
+            self.slidesTotal  = $slides.length;
+            self.slideCurrent = self.options.start || 0;
+            slidesVisible     = Math.ceil(viewportSize / slideSize);
+
+            $overview.append($slides.slice(0, slidesVisible).clone().addClass("mirrored"));
+            $overview.css(sizeLabel.toLowerCase(), slideSize * (self.slidesTotal + slidesVisible));
+
+            return self;
         };
 
         function setEvents()
@@ -88,64 +93,86 @@
                 $prev.click(function()
                 {
                     self.stop();
-                    return self.move(self.slideCurrent - self.options.stepSize);
+                    self.move(--slideIndex);
+
+                    return false;
                 });
 
                 $next.click(function()
                 {
                     self.stop();
-                    return self.move(self.slideCurrent + self.options.stepSize);
+                    self.move(++slideIndex);
+
+                    return false;
                 });
             }
+
+            $(window).resize(self.update);
 
             if(self.options.bullets)
             {
                 $container.on("click", ".bullet", function()
                 {
-                    return self.move(+$(this).attr("data-slide"));
+                    self.stop();
+                    self.move(slideIndex = +$(this).attr("data-slide"));
+
+                    return false;
                 });
             }
         }
 
         this.start = function()
         {
-            if(self.options.interval){
+            if(self.options.interval)
+            {
                 if(running)
                 {
                     clearTimeout(intervalTimer);
-    
+
                     intervalTimer = setTimeout(function()
                     {
-                        self.move(self.slideCurrent + self.options.stepSize);
-    
-                    }, this.options.intervalTime);
+                        self.move(++slideIndex);
+                    }, self.options.intervalTime);
                 }
             }
+
+            return self;
         };
 
         this.stop = function()
         {
             running=false;
+
             clearTimeout(intervalTimer);
+
+            return self;
         };
 
-        this.move = function(slideIndex)
+        this.move = function(index)
         {
-            self.slideCurrent = Math.max(0, Math.min(slideIndex || 0, self.slidesTotal - slidesVisible));
-            if(slideIndex> (self.slidesTotal - slidesVisible)){
-                self.slideCurrent=0;
+            slideIndex        = index;
+            self.slideCurrent = slideIndex % self.slidesTotal;
+
+            if(slideIndex < 0)
+            {
+                self.slideCurrent = slideIndex = self.slidesTotal - 1;
+                $overview.css(posiLabel, -(self.slidesTotal) * slideSize);
             }
-            if(slideIndex< 0){
-                self.slideCurrent=self.slidesTotal - slidesVisible;
+
+            if(slideIndex > self.slidesTotal)
+            {
+                self.slideCurrent = slideIndex = 1;
+                $overview.css(posiLabel, 0);
             }
-            contentStyle[posiLabel] = -self.slideCurrent * slideSize;
+
+            contentStyle[posiLabel] = -slideIndex * slideSize;
 
             $overview.animate(
                 contentStyle
             ,   {
                     queue    : false
-                ,   duration : this.options.animation ? this.options.animationTime : 0
-                ,   complete : function()
+                ,   duration : self.options.animation ? self.options.animationTime : 0
+                ,   always : function()
                     {
                         $container.trigger("move", [$slides[self.slideCurrent], self.slideCurrent]);
                     }
@@ -154,12 +181,12 @@
             setButtons();
             self.start();
 
-            return false;
+            return self;
         };
 
         function setButtons()
         {
-            if(self.options.buttons)
+            if(self.options.buttons && !self.options.infinite)
             {
                 $prev.toggleClass("disable", self.slideCurrent <= 0);
                 $next.toggleClass("disable", self.slideCurrent >= self.slidesTotal - slidesVisible);
